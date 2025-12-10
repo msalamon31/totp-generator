@@ -8,6 +8,11 @@
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // CONFIGURATION: Replace this with your Google Apps Script Web App URL
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwtlDNAUdimDFwceXTOEHH7h-ujE0aeTibys1EwORa4mRvwSF_urvC7jxaAEi11xXAz/exec';
+        // Get your URL by following the setup instructions below
+    </script>
 </head>
 <body>
     <div id="root"></div>
@@ -16,54 +21,57 @@
         const { useState, useEffect } = React;
         
         // Lucide React icons as inline SVG components
-        const Copy = ({ size = 24, className = "" }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        const Copy = ({ size = 24 }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
                 <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
             </svg>
         );
         
-        const Check = ({ size = 24, className = "" }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        const Check = ({ size = 24 }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20 6 9 17l-5-5"/>
             </svg>
         );
-        
-        const Camera = ({ size = 24, className = "" }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
-                <circle cx="12" cy="13" r="3"/>
-            </svg>
-        );
 
-        // Simple localStorage-based storage implementation
+        // Google Sheets API wrapper
         const storage = {
-            async get(key, shared = false) {
-                const value = localStorage.getItem(key);
-                return value ? { key, value, shared } : null;
-            },
-            async set(key, value, shared = false) {
-                localStorage.setItem(key, value);
-                return { key, value, shared };
-            },
-            async delete(key, shared = false) {
-                localStorage.removeItem(key);
-                return { key, deleted: true, shared };
-            },
-            async list(prefix = '', shared = false) {
-                const keys = [];
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith(prefix)) {
-                        keys.push(key);
-                    }
+            async get(slug) {
+                try {
+                    const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=get&slug=${slug}`);
+                    const data = await response.json();
+                    return data.found ? data : null;
+                } catch (error) {
+                    console.error('Error fetching data:', error);
+                    return null;
                 }
-                return { keys, prefix, shared };
+            },
+            
+            async set(slug, secret, description) {
+                try {
+                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'set',
+                            slug: slug,
+                            secret: secret,
+                            description: description
+                        })
+                    });
+                    const data = await response.json();
+                    return data.success;
+                } catch (error) {
+                    console.error('Error saving data:', error);
+                    return false;
+                }
+            },
+            
+            async exists(slug) {
+                const data = await this.get(slug);
+                return data !== null;
             }
         };
-        
-        // Make storage available globally
-        window.storage = storage;
 
         const TOTPGenerator = () => {
             const [currentPage, setCurrentPage] = useState('home');
@@ -75,6 +83,7 @@
             const [currentTime, setCurrentTime] = useState(Date.now());
             const [copiedLink, setCopiedLink] = useState(false);
             const [copiedCode, setCopiedCode] = useState(false);
+            const [loading, setLoading] = useState(false);
 
             useEffect(() => {
                 const path = window.location.hash.slice(1);
@@ -91,19 +100,25 @@
             }, []);
 
             const loadTOTPPage = async (slug) => {
+                setLoading(true);
                 try {
-                    const result = await window.storage.get(`totp:${slug}`, true);
-                    if (result) {
-                        const data = JSON.parse(result.value);
-                        setTotpData(data);
+                    const data = await storage.get(slug);
+                    if (data) {
+                        setTotpData({
+                            slug: slug,
+                            secret: data.secret,
+                            description: data.description
+                        });
                         setCurrentPage('display');
                     } else {
                         setError('TOTP page not found');
                         setCurrentPage('home');
                     }
                 } catch (err) {
-                    setError('TOTP page not found');
+                    setError('Error loading TOTP page');
                     setCurrentPage('home');
+                } finally {
+                    setLoading(false);
                 }
             };
 
@@ -124,9 +139,11 @@
 
             const createTOTP = async () => {
                 setError('');
+                setLoading(true);
 
                 if (!validateSecretKey(secretKey)) {
                     setError('Secret key must be 16-32 characters and contain only A-Z and 2-7');
+                    setLoading(false);
                     return;
                 }
 
@@ -134,55 +151,50 @@
                 if (slug) {
                     if (!/^[a-zA-Z0-9-_]+$/.test(slug)) {
                         setError('Custom URL can only contain letters, numbers, hyphens, and underscores');
+                        setLoading(false);
                         return;
                     }
 
-                    try {
-                        const existing = await window.storage.get(`totp:${slug}`, true);
-                        if (existing) {
-                            setError('This custom URL is already taken. Please choose another one.');
-                            return;
-                        }
-                    } catch (err) {
-                        // URL doesn't exist, which is what we want
+                    const exists = await storage.exists(slug);
+                    if (exists) {
+                        setError('This custom URL is already taken. Please choose another one.');
+                        setLoading(false);
+                        return;
                     }
                 } else {
                     slug = generateRandomSlug();
                     
                     let attempts = 0;
                     while (attempts < 10) {
-                        try {
-                            const existing = await window.storage.get(`totp:${slug}`, true);
-                            if (existing) {
-                                slug = generateRandomSlug();
-                                attempts++;
-                            } else {
-                                break;
-                            }
-                        } catch (err) {
+                        const exists = await storage.exists(slug);
+                        if (exists) {
+                            slug = generateRandomSlug();
+                            attempts++;
+                        } else {
                             break;
                         }
                     }
                 }
 
-                const data = {
-                    secret: secretKey.replace(/\s/g, '').toUpperCase(),
-                    description: description.trim(),
-                    slug: slug,
-                    created: Date.now()
-                };
-
-                try {
-                    await window.storage.set(`totp:${slug}`, JSON.stringify(data), true);
+                const cleanSecret = secretKey.replace(/\s/g, '').toUpperCase();
+                const success = await storage.set(slug, cleanSecret, description.trim());
+                
+                if (success) {
                     window.location.hash = slug;
-                    setTotpData(data);
+                    setTotpData({
+                        slug: slug,
+                        secret: cleanSecret,
+                        description: description.trim()
+                    });
                     setCurrentPage('display');
                     setSecretKey('');
                     setDescription('');
                     setCustomUrl('');
-                } catch (err) {
+                } else {
                     setError('Failed to create TOTP. Please try again.');
                 }
+                
+                setLoading(false);
             };
 
             const base32Decode = (str) => {
@@ -277,8 +289,6 @@
                     alert('Failed to copy code');
                 }
             };
-
-            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
             const DisplayPage = () => {
                 const [code, setCode] = useState('------');
@@ -375,6 +385,16 @@
                 );
             };
 
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
+                            <div className="text-xl font-semibold text-gray-800">Loading...</div>
+                        </div>
+                    </div>
+                );
+            }
+
             if (currentPage === 'display' && totpData) {
                 return <DisplayPage />;
             }
@@ -437,9 +457,10 @@
 
                             <button
                                 onClick={createTOTP}
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
+                                disabled={loading}
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-4 py-3 rounded-lg font-semibold transition-colors"
                             >
-                                Generate TOTP Page
+                                {loading ? 'Creating...' : 'Generate TOTP Page'}
                             </button>
                         </div>
 
