@@ -10,7 +10,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         // CONFIGURATION: Replace this with your Google Apps Script Web App URL
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwtlDNAUdimDFwceXTOEHH7h-ujE0aeTibys1EwORa4mRvwSF_urvC7jxaAEi11xXAz/exec';
+        const GOOGLE_SCRIPT_URL = 'AKfycbwtlDNAUdimDFwceXTOEHH7h-ujE0aeTibys1EwORa4mRvwSF_urvC7jxaAEi11xXAz';
         // Get your URL by following the setup instructions below
     </script>
 </head>
@@ -38,7 +38,7 @@
         const storage = {
             async get(slug) {
                 try {
-                    const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=get&slug=${slug}`);
+                    const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=get&slug=${encodeURIComponent(slug)}`);
                     const data = await response.json();
                     return data.found ? data : null;
                 } catch (error) {
@@ -49,16 +49,9 @@
             
             async set(slug, secret, description) {
                 try {
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'set',
-                            slug: slug,
-                            secret: secret,
-                            description: description
-                        })
-                    });
+                    // Use GET request with parameters to avoid CORS issues
+                    const url = `${GOOGLE_SCRIPT_URL}?action=set&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(secret)}&description=${encodeURIComponent(description)}`;
+                    const response = await fetch(url);
                     const data = await response.json();
                     return data.success;
                 } catch (error) {
